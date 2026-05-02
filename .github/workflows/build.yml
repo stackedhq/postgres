@@ -1,0 +1,127 @@
+name: Build
+
+on:
+  push:
+    branches:
+      - master
+  schedule:
+    # Weekly rebuild to pick up upstream postgres:<major>-bookworm security
+    # updates and PGDG extension patches even when our Dockerfile hasn't
+    # changed. Mondays 03:00 UTC.
+    - cron: "0 3 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    permissions:
+      contents: read
+      packages: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        pg_major: ["17"]
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v5
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute date tag
+        id: date
+        run: echo "value=$(date -u +%Y%m%d)" >> "$GITHUB_OUTPUT"
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/stackedhq/postgres
+          # On master push (or schedule/dispatch from master) we publish:
+          #   :<major>                       — mutable, what agents pull
+          #   :<major>-stk.<short-sha>       — immutable, sha-pinned
+          #   :<major>-stk.<yyyymmdd>        — immutable, date-pinned
+          tags: |
+            type=raw,value=${{ matrix.pg_major }},enable={{is_default_branch}}
+            type=raw,value=${{ matrix.pg_major }}-stk.${{ steps.date.outputs.value }},enable={{is_default_branch}}
+            type=sha,prefix=${{ matrix.pg_major }}-stk.,format=short,enable={{is_default_branch}}
+          labels: |
+            org.opencontainers.image.title=stackedhq/postgres
+            org.opencontainers.image.description=Batteries-included Postgres ${{ matrix.pg_major }} for Stacked
+            org.opencontainers.image.source=https://github.com/stackedhq/postgres
+            org.opencontainers.image.licenses=BUSL-1.1
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          build-args: |
+            PG_MAJOR=${{ matrix.pg_major }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=postgres-${{ matrix.pg_major }}
+          cache-to: type=gha,mode=max,scope=postgres-${{ matrix.pg_major }}
+
+      - name: Smoke test
+        run: |
+          set -euo pipefail
+          IMAGE="ghcr.io/stackedhq/postgres:${{ matrix.pg_major }}-stk.${{ steps.date.outputs.value }}"
+          echo "Smoke-testing $IMAGE"
+          docker run -d --name pgtest \
+            -e POSTGRES_USER=stk_user \
+            -e POSTGRES_PASSWORD=stk_pw \
+            -e POSTGRES_DB=stk_db \
+            -p 15432:5432 \
+            "$IMAGE"
+
+          # Wait up to 60s for readiness.
+          for i in $(seq 1 60); do
+            if docker exec pgtest pg_isready -U stk_user -d stk_db >/dev/null 2>&1; then
+              break
+            fi
+            sleep 1
+          done
+
+          # Confirm auto-enabled extensions are live.
+          docker exec pgtest psql -U stk_user -d stk_db -tAc \
+            "SELECT extname FROM pg_extension ORDER BY extname;" \
+            | tee /tmp/exts.txt
+          for ext in pg_stat_statements pgcrypto plpgsql "uuid-ossp"; do
+            grep -qx "$ext" /tmp/exts.txt || { echo "missing extension: $ext"; exit 1; }
+          done
+
+          # Confirm a sample on-demand extension installs cleanly.
+          docker exec pgtest psql -U stk_user -d stk_db -c \
+            "CREATE EXTENSION vector; SELECT '[1,2,3]'::vector;"
+
+          # Confirm shared_preload_libraries is what we set.
+          docker exec pgtest psql -U stk_user -d stk_db -tAc \
+            "SHOW shared_preload_libraries;" | tee /tmp/spl.txt
+          grep -q "pg_stat_statements" /tmp/spl.txt
+          grep -q "pg_cron" /tmp/spl.txt
+          grep -q "pgaudit" /tmp/spl.txt
+          grep -q "pg_stat_monitor" /tmp/spl.txt
+          grep -q "auto_explain" /tmp/spl.txt
+
+          docker rm -f pgtest
