@@ -88,6 +88,17 @@ jobs:
           set -euo pipefail
           IMAGE="ghcr.io/stackedhq/postgres:${{ matrix.pg_major }}-stk.${{ steps.date.outputs.value }}"
           echo "Smoke-testing $IMAGE"
+
+          # Always print container logs and clean up, even on failure.
+          cleanup() {
+            echo "=== container logs ==="
+            docker logs pgtest 2>&1 || true
+            echo "=== container inspect ==="
+            docker inspect pgtest --format '{{json .State}}' 2>&1 || true
+            docker rm -f pgtest >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
           docker run -d --name pgtest \
             -e POSTGRES_USER=stk_user \
             -e POSTGRES_PASSWORD=stk_pw \
@@ -95,13 +106,23 @@ jobs:
             -p 15432:5432 \
             "$IMAGE"
 
-          # Wait up to 60s for readiness.
+          # Wait up to 60s for readiness. Bail early if the container exits.
+          ready=0
           for i in $(seq 1 60); do
+            if ! docker inspect pgtest --format '{{.State.Running}}' 2>/dev/null | grep -q true; then
+              echo "container exited during startup after ${i}s"
+              exit 1
+            fi
             if docker exec pgtest pg_isready -U stk_user -d stk_db >/dev/null 2>&1; then
+              ready=1
               break
             fi
             sleep 1
           done
+          if [ "$ready" != "1" ]; then
+            echo "pg_isready never succeeded within 60s"
+            exit 1
+          fi
 
           # Confirm auto-enabled extensions are live.
           docker exec pgtest psql -U stk_user -d stk_db -tAc \
@@ -123,4 +144,4 @@ jobs:
           grep -q "pgaudit" /tmp/spl.txt
           grep -q "auto_explain" /tmp/spl.txt
 
-          docker rm -f pgtest
+          # cleanup runs via trap
