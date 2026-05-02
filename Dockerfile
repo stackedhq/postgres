@@ -15,8 +15,7 @@
 #     unaccent
 #
 #   PGDG packages:
-#     pgvector, postgis, pg_cron, pgaudit, pg_repack, pg_partman, hypopg,
-#     pg_stat_monitor
+#     pgvector, postgis, pg_cron, pgaudit, pg_repack, pg_partman, hypopg
 #
 # `shared_preload_libraries` and other system-level GUCs are set via
 # ALTER SYSTEM in `init.d/00-shared-preload.sql`, which the official
@@ -54,7 +53,6 @@ RUN set -eux \
         "postgresql-${PG_MAJOR}-repack" \
         "postgresql-${PG_MAJOR}-partman" \
         "postgresql-${PG_MAJOR}-hypopg" \
-        "postgresql-${PG_MAJOR}-pg-stat-monitor" \
     && rm -rf /var/lib/apt/lists/*
 
 # Init scripts run once on first boot against an empty data directory,

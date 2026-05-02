@@ -121,7 +121,6 @@ jobs:
           grep -q "pg_stat_statements" /tmp/spl.txt
           grep -q "pg_cron" /tmp/spl.txt
           grep -q "pgaudit" /tmp/spl.txt
-          grep -q "pg_stat_monitor" /tmp/spl.txt
           grep -q "auto_explain" /tmp/spl.txt
 
           docker rm -f pgtest

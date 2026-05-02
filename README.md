@@ -61,7 +61,6 @@ Bundled extensions (PGDG packages):
 - `pg_repack` — online table reorganisation
 - `pg_partman` — partition management
 - `hypopg` — hypothetical indexes
-- `pg_stat_monitor` — query performance monitoring
 
 Plus everything in `postgresql-contrib` (already shipped with the base
 image): `pg_trgm`, `btree_gin`, `btree_gist`, `hstore`, `citext`,
@@ -69,7 +68,7 @@ image): `pg_trgm`, `btree_gin`, `btree_gist`, `hstore`, `citext`,
 `pg_stat_statements`, `auto_explain`, etc.
 
 Preloaded via `shared_preload_libraries`:
-`pg_stat_statements`, `pg_cron`, `pgaudit`, `pg_stat_monitor`, `auto_explain`.
+`pg_stat_statements`, `pg_cron`, `pgaudit`, `auto_explain`.
 
 Auto-enabled on first boot in the `extensions` schema:
 `pg_stat_statements`, `pgcrypto`, `uuid-ossp`.

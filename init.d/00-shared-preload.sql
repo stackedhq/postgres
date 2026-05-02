@@ -8,7 +8,7 @@
 -- final foreground process.
 
 ALTER SYSTEM SET shared_preload_libraries =
-    'pg_stat_statements,pg_cron,pgaudit,pg_stat_monitor,auto_explain';
+    'pg_stat_statements,pg_cron,pgaudit,auto_explain';
 
 -- pg_stat_statements
 ALTER SYSTEM SET pg_stat_statements.track = 'all';
