@@ -27,7 +27,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        pg_major: ["17"]
+        # Stacked's create-database UI offers 17/16/15/14 — keep this in
+        # sync with the `<option>` list in
+        # stackedhq/stacked packages/web/src/components/databases/create-database-sheet.tsx.
+        # Each major builds and smoke-tests independently (fail-fast: false),
+        # so a PGDG packaging gap in one major doesn't block the others.
+        pg_major: ["17", "16", "15", "14"]
 
     steps:
       - name: Checkout repo
